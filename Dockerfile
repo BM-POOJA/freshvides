@@ -10,6 +10,8 @@ WORKDIR /app
 COPY --from=build /app/build ./build
 COPY --from=build /app/.dart_tool ./.dart_tool
 
-EXPOSE 8080
+# Cloud Run requires listening on 0.0.0.0
 ENV PORT=8080
+EXPOSE 8080
+
 CMD ["dart", "build/bin/server.dart"]
