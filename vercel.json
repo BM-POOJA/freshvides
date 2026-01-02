@@ -1,18 +1,3 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "build/bin/server.dart",
-      "use": "@vercel/node",
-      "config": {
-        "zeroConfig": true
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "build/bin/server.dart"
-    }
-  ]
+  "version": 2
 }

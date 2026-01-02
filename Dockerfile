@@ -1,23 +1,15 @@
-# Use official Dart image
-FROM google/dart:latest
-
-# Set working directory
+FROM google/dart:latest AS build
 WORKDIR /app
-
-# Copy pubspec files
 COPY pubspec.* ./
-
-# Get dependencies
 RUN dart pub get
-
-# Copy project files
 COPY . .
-
-# Build Dart Frog for production
 RUN dart_frog build
 
-# Expose port (Vercel will override this)
-EXPOSE 8080
+FROM google/dart:latest
+WORKDIR /app
+COPY --from=build /app/build ./build
+COPY --from=build /app/.dart_tool ./.dart_tool
 
-# Run the app with PORT from environment
-CMD ["dart", "build/bin/server.dart", "--port", "${PORT:-8080}"]
+EXPOSE 8080
+ENV PORT=8080
+CMD ["dart", "build/bin/server.dart"]
