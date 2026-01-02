@@ -1,11 +1,12 @@
-FROM google/dart:latest AS build
+FROM dart:stable AS build
 WORKDIR /app
 COPY pubspec.* ./
 RUN dart pub get
 COPY . .
-RUN dart_frog build
+RUN dart pub global activate dart_frog_cli
+RUN dart pub global run dart_frog_cli:dart_frog build
 
-FROM google/dart:latest
+FROM dart:stable
 WORKDIR /app
 COPY --from=build /app/build ./build
 COPY --from=build /app/.dart_tool ./.dart_tool
