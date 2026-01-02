@@ -1,18 +1,28 @@
 FROM dart:stable AS build
+
+# Install dependencies
 WORKDIR /app
 COPY pubspec.* ./
 RUN dart pub get
-COPY . .
-RUN dart pub global activate dart_frog_cli
-RUN dart pub global run dart_frog_cli:dart_frog build
 
+# Copy source code
+COPY . .
+
+# Install dart_frog CLI and build
+RUN dart pub global activate dart_frog_cli
+ENV PATH="$PATH:/root/.pub-cache/bin"
+RUN dart_frog build
+
+# Production stage
 FROM dart:stable
 WORKDIR /app
-COPY --from=build /app/build ./build
-COPY --from=build /app/.dart_tool ./.dart_tool
 
-# Cloud Run requires listening on 0.0.0.0
+# Copy built application
+COPY --from=build /app/build .
+
+# Set environment variables
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["dart", "build/bin/server.dart"]
+# Start the server
+CMD ["dart", "bin/server.dart"]
