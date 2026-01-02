@@ -16,8 +16,8 @@ COPY . .
 # Build Dart Frog for production
 RUN dart_frog build
 
-# Expose port
+# Expose port (Vercel will override this)
 EXPOSE 8080
 
-# Run the app
-CMD ["dart", "build/bin/server.dart"]
+# Run the app with PORT from environment
+CMD ["dart", "build/bin/server.dart", "--port", "${PORT:-8080}"]
