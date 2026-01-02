@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
+import 'package:http/http.dart' as http;
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.post) {
@@ -56,27 +58,16 @@ Future<Response> onRequest(RequestContext context) async {
         );
       }
 
-      // Save photo file to uploads directory
-      final uploadsDir = Directory('uploads/photos');
-      if (!uploadsDir.existsSync()) {
-        uploadsDir.createSync(recursive: true);
-      }
-
-      // Generate unique filename with proper extension
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      // Validate image extension
       final originalName = photoFile.name;
-
-      // Ensure we have an extension
       String extension = '';
       if (originalName.contains('.')) {
-        extension = '.${originalName.split('.').last.toLowerCase()}';
+        extension = originalName.split('.').last.toLowerCase();
       } else {
-        // Default to jpg if no extension
-        extension = '.jpg';
+        extension = 'jpg';
       }
 
-      // Validate image extension
-      final validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+      final validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
       if (!validExtensions.contains(extension)) {
         await conn.close();
         return Response.json(
@@ -87,16 +78,11 @@ Future<Response> onRequest(RequestContext context) async {
         );
       }
 
-      final fileName = '${userId}_${timestamp}$extension';
-      final filePath = '${uploadsDir.path}/$fileName';
-
-      // Write file to disk - read all bytes from the stream
+      // Read file bytes
       final fileBytes = <int>[];
       await for (final chunk in photoFile.openRead()) {
         fileBytes.addAll(chunk);
       }
-
-      print('Photo file size: ${fileBytes.length} bytes');
 
       if (fileBytes.isEmpty) {
         await conn.close();
@@ -106,19 +92,49 @@ Future<Response> onRequest(RequestContext context) async {
         );
       }
 
-      final savedFile = File(filePath);
-      await savedFile.writeAsBytes(fileBytes);
+      // Upload to Cloudinary
+      final cloudinaryUrl =
+          'https://api.cloudinary.com/v1_1/${Platform.environment['CLOUDINARY_CLOUD_NAME']}/image/upload';
 
-      print('Photo saved to: $filePath');
+      final request = http.MultipartRequest('POST', Uri.parse(cloudinaryUrl));
+      request.fields['upload_preset'] =
+          'freshvides_preset'; // Create this in Cloudinary
+      request.fields['public_id'] =
+          'photos/${userId}_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Insert photo into database
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: photoFile.name,
+        ),
+      );
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode != 200) {
+        await conn.close();
+        return Response.json(
+          statusCode: 500,
+          body: {'error': 'Failed to upload to Cloudinary'},
+        );
+      }
+
+      final cloudinaryResponse = jsonDecode(responseBody);
+      final imageUrl = cloudinaryResponse['secure_url'];
+      final publicId = cloudinaryResponse['public_id'];
+
+      print('✅ Photo uploaded to Cloudinary: $imageUrl');
+
+      // Insert photo into database with Cloudinary URL
       final result = await conn.execute(
         '''INSERT INTO photos (user_id, description, image, created_at) 
            VALUES (:user_id, :description, :image, NOW())''',
         {
           'user_id': userId,
           'description': description ?? '',
-          'image': fileName,
+          'image': imageUrl, // Store full Cloudinary URL
         },
       );
 
@@ -132,7 +148,8 @@ Future<Response> onRequest(RequestContext context) async {
             'id': result.lastInsertID.toInt(),
             'user_id': userId,
             'description': description,
-            'image': '/uploads/photos/$fileName',
+            'image': imageUrl,
+            'public_id': publicId,
           },
         },
       );

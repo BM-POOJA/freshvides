@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
+// ignore: directives_ordering
+import 'package:http/http.dart' as http;
 
 /// Track users who are currently uploading (to prevent multiple uploads)
 final Set<int> _usersCurrentlyUploading = {};
@@ -114,27 +116,7 @@ Future<Response> _postVideo(RequestContext context) async {
           );
         }
 
-        // Save video file to uploads directory
-        final uploadsDir = Directory('uploads/videos');
-        if (!uploadsDir.existsSync()) {
-          uploadsDir.createSync(recursive: true);
-        }
-
-        // Generate unique filename with proper extension
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final originalName = videoFile.name;
-        // Ensure we have an extension
-        String extension = '';
-        if (originalName.contains('.')) {
-          extension = '.${originalName.split('.').last}';
-        } else {
-          // Default to mp4 if no extension
-          extension = '.mp4';
-        }
-        final fileName = '${userId}_${timestamp}$extension';
-        final filePath = '${uploadsDir.path}/$fileName';
-
-        // Write file to disk - read all bytes from the stream
+        // Read video file bytes
         final fileBytes = <int>[];
         await for (final chunk in videoFile.openRead()) {
           fileBytes.addAll(chunk);
@@ -151,15 +133,45 @@ Future<Response> _postVideo(RequestContext context) async {
           );
         }
 
-        final savedFile = File(filePath);
-        await savedFile.writeAsBytes(fileBytes);
+        // Upload to Cloudinary
+        final cloudinaryUrl =
+            'https://api.cloudinary.com/v1_1/${Platform.environment['CLOUDINARY_CLOUD_NAME']}/video/upload';
 
-        print('Video saved to: $filePath');
+        final request = http.MultipartRequest('POST', Uri.parse(cloudinaryUrl));
+        request.fields['upload_preset'] =
+            'freshvides_preset'; // Create this in Cloudinary
+        request.fields['public_id'] =
+            'videos/${userId}_${DateTime.now().millisecondsSinceEpoch}';
+        request.fields['resource_type'] = 'video';
 
-        // Video URL (file name to be used with /video endpoint)
-        final videoUrl = fileName;
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            fileBytes,
+            filename: videoFile.name,
+          ),
+        );
 
-        // Insert video into database
+        final response = await request.send();
+        final responseBody = await response.stream.bytesToString();
+
+        if (response.statusCode != 200) {
+          await conn.close();
+          _usersCurrentlyUploading.remove(userId);
+          print('Cloudinary error: $responseBody');
+          return Response.json(
+            statusCode: 500,
+            body: {'error': 'Failed to upload to Cloudinary'},
+          );
+        }
+
+        final cloudinaryResponse = jsonDecode(responseBody);
+        final videoUrl = cloudinaryResponse['secure_url'];
+        final publicId = cloudinaryResponse['public_id'];
+
+        print('✅ Video uploaded to Cloudinary: $videoUrl');
+
+        // Insert video into database with Cloudinary URL
         final result = await conn.execute(
           '''INSERT INTO videos (user_id, title, description, video_url, video_type, duration, created_at) 
              VALUES (:user_id, :title, :description, :video_url, :video_type, :duration, NOW())''',
@@ -187,10 +199,10 @@ Future<Response> _postVideo(RequestContext context) async {
               'user_id': userId,
               'title': title,
               'description': description,
-              'video_url': '/uploads/videos/$fileName',
+              'video_url': videoUrl,
               'video_type': videoType,
               'duration': duration,
-              'file_name': fileName,
+              'public_id': publicId,
             },
           },
         );

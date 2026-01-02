@@ -10,6 +10,7 @@ dependencies:
   dart_frog: ^1.1.0
   mysql_client: ^0.0.27
   path: ^1.8.3
+  http:
 
 dev_dependencies:
   dart_frog_lint: ^0.1.0
