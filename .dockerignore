@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.local
+.DS_Store
+build/
+.dart_tool/
+.packages
+*.iml
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.pub-cache
+node_modules
+uploads/
