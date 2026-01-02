@@ -1,9 +1,21 @@
 {
-  "buildCommand": "dart pub get && dart_frog build",
-  "outputDirectory": "build",
-  "devCommand": "dart_frog dev",
+  "version": 2,
+  "builds": [
+    {
+      "src": "build/bin/server.dart",
+      "use": "@vercel/node",
+      "config": {
+        "zeroConfig": true
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "build/bin/server.dart"
+    }
+  ],
   "env": {
-    "PORT": "8080",
     "DB_HOST": "@db_host",
     "DB_PORT": "@db_port",
     "DB_USER": "@db_user",
