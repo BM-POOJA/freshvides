@@ -17,10 +17,11 @@ RUN dart_frog build
 FROM dart:stable
 WORKDIR /app
 
-# Copy built application and dependencies
+# Copy the entire build directory including pubspec
 COPY --from=build /app/build ./
-COPY --from=build /app/build/pubspec.* ./
-RUN dart pub get --offline || dart pub get
+
+# Install all dependencies in production
+RUN dart pub get
 
 # Set environment variables
 ENV PORT=8080
