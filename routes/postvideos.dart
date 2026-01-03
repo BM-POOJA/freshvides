@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dart_frog/dart_frog.dart';
@@ -5,6 +6,7 @@ import 'package:listofapis/database_helper.dart';
 import 'package:postgres/postgres.dart';
 // ignore: directives_ordering
 import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart';
 
 /// Track users who are currently uploading (to prevent multiple uploads)
 final Set<int> _usersCurrentlyUploading = {};
@@ -134,16 +136,51 @@ Future<Response> _postVideo(RequestContext context) async {
           );
         }
 
-        // Upload to Cloudinary
+        // Upload to Cloudinary with signed upload
+        final cloudinaryCloudName =
+            Platform.environment['CLOUDINARY_CLOUD_NAME'];
+        final cloudinaryApiKey = Platform.environment['CLOUDINARY_API_KEY'];
+        final cloudinaryApiSecret =
+            Platform.environment['CLOUDINARY_API_SECRET'];
+
+        if (cloudinaryCloudName == null ||
+            cloudinaryCloudName.isEmpty ||
+            cloudinaryApiKey == null ||
+            cloudinaryApiKey.isEmpty ||
+            cloudinaryApiSecret == null ||
+            cloudinaryApiSecret.isEmpty) {
+          await conn.close();
+          _usersCurrentlyUploading.remove(userId);
+          print('❌ Cloudinary environment variables not properly configured');
+          return Response.json(
+            statusCode: 500,
+            body: {
+              'error': 'Server configuration error: Cloudinary not configured'
+            },
+          );
+        }
+
         final cloudinaryUrl =
-            'https://api.cloudinary.com/v1_1/${Platform.environment['CLOUDINARY_CLOUD_NAME']}/video/upload';
+            'https://api.cloudinary.com/v1_1/$cloudinaryCloudName/video/upload';
 
         final request = http.MultipartRequest('POST', Uri.parse(cloudinaryUrl));
-        request.fields['upload_preset'] =
-            'freshvides_preset'; // Create this in Cloudinary
+
+        // Add API key for signed upload
+        request.fields['api_key'] = cloudinaryApiKey;
+        request.fields['timestamp'] =
+            (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
         request.fields['public_id'] =
             'videos/${userId}_${DateTime.now().millisecondsSinceEpoch}';
         request.fields['resource_type'] = 'video';
+
+        // Generate signature for secure upload
+        final signature = _generateCloudinarySignature(
+          publicId: request.fields['public_id']!,
+          timestamp: request.fields['timestamp']!,
+          apiSecret: cloudinaryApiSecret,
+          resourceType: 'video',
+        );
+        request.fields['signature'] = signature;
 
         request.files.add(
           http.MultipartFile.fromBytes(
@@ -153,16 +190,26 @@ Future<Response> _postVideo(RequestContext context) async {
           ),
         );
 
-        final response = await request.send();
+        final response = await request.send().timeout(
+          Duration(seconds: 120),
+          onTimeout: () {
+            throw TimeoutException(
+                'Cloudinary upload timed out after 120 seconds');
+          },
+        );
         final responseBody = await response.stream.bytesToString();
 
         if (response.statusCode != 200) {
           await conn.close();
           _usersCurrentlyUploading.remove(userId);
-          print('Cloudinary error: $responseBody');
+          print(
+              '❌ Cloudinary video upload failed (${response.statusCode}): $responseBody');
           return Response.json(
             statusCode: 500,
-            body: {'error': 'Failed to upload to Cloudinary'},
+            body: {
+              'error': 'Failed to upload to Cloudinary',
+              'details': 'Status ${response.statusCode}',
+            },
           );
         }
 
@@ -224,6 +271,37 @@ Future<Response> _postVideo(RequestContext context) async {
       body: {'error': 'Internal server error: $e'},
     );
   }
+}
+
+/// Generate Cloudinary signature for authenticated uploads
+String _generateCloudinarySignature({
+  required String publicId,
+  required String timestamp,
+  required String apiSecret,
+  String? resourceType,
+}) {
+  // Build parameters string (alphabetically sorted)
+  final params = <String, String>{
+    'public_id': publicId,
+    'timestamp': timestamp,
+  };
+
+  if (resourceType != null) {
+    params['resource_type'] = resourceType;
+  }
+
+  // Sort keys alphabetically and build string
+  final sortedKeys = params.keys.toList()..sort();
+  final paramsString = sortedKeys.map((key) => '$key=${params[key]}').join('&');
+
+  // Append API secret
+  final stringToSign = '$paramsString$apiSecret';
+
+  // Generate SHA256 hash
+  final bytes = utf8.encode(stringToSign);
+  final digest = sha256.convert(bytes);
+
+  return digest.toString();
 }
 
 /// GET - Get all videos or videos by user_id
