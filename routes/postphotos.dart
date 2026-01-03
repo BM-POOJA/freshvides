@@ -95,9 +95,18 @@ Future<Response> onRequest(RequestContext context) async {
       }
 
       // Upload to Cloudinary with signed upload
+      print('📸 Starting Cloudinary upload process...');
       final cloudinaryCloudName = Platform.environment['CLOUDINARY_CLOUD_NAME'];
       final cloudinaryApiKey = Platform.environment['CLOUDINARY_API_KEY'];
       final cloudinaryApiSecret = Platform.environment['CLOUDINARY_API_SECRET'];
+
+      print('🔍 Checking Cloudinary credentials...');
+      print(
+          '  Cloud Name: ${cloudinaryCloudName != null && cloudinaryCloudName.isNotEmpty ? "✅ Set" : "❌ Missing"}');
+      print(
+          '  API Key: ${cloudinaryApiKey != null && cloudinaryApiKey.isNotEmpty ? "✅ Set" : "❌ Missing"}');
+      print(
+          '  API Secret: ${cloudinaryApiSecret != null && cloudinaryApiSecret.isNotEmpty ? "✅ Set" : "❌ Missing"}');
 
       if (cloudinaryCloudName == null ||
           cloudinaryCloudName.isEmpty ||
@@ -115,8 +124,10 @@ Future<Response> onRequest(RequestContext context) async {
         );
       }
 
+      print('✅ All Cloudinary credentials found');
       final cloudinaryUrl =
           'https://api.cloudinary.com/v1_1/$cloudinaryCloudName/image/upload';
+      print('📤 Upload URL: $cloudinaryUrl');
 
       final request = http.MultipartRequest('POST', Uri.parse(cloudinaryUrl));
 
@@ -127,6 +138,7 @@ Future<Response> onRequest(RequestContext context) async {
       request.fields['public_id'] =
           'photos/${userId}_${DateTime.now().millisecondsSinceEpoch}';
 
+      print('🔐 Generating signature...');
       // Generate signature for secure upload
       final signature = _generateCloudinarySignature(
         publicId: request.fields['public_id']!,
@@ -134,6 +146,8 @@ Future<Response> onRequest(RequestContext context) async {
         apiSecret: cloudinaryApiSecret,
       );
       request.fields['signature'] = signature;
+      print('✅ Signature generated: ${signature.substring(0, 10)}...');
+      print('📦 File size: ${fileBytes.length} bytes');
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -143,8 +157,12 @@ Future<Response> onRequest(RequestContext context) async {
         ),
       );
 
+      print('⏳ Sending request to Cloudinary...');
       final response = await request.send();
       final responseBody = await response.stream.bytesToString();
+
+      print('📥 Cloudinary Response Status: ${response.statusCode}');
+      print('📥 Response Body: $responseBody');
 
       if (response.statusCode != 200) {
         await conn.close();
@@ -155,6 +173,7 @@ Future<Response> onRequest(RequestContext context) async {
           body: {
             'error': 'Failed to upload to Cloudinary',
             'details': 'Status ${response.statusCode}',
+            'cloudinary_response': responseBody,
           },
         );
       }
