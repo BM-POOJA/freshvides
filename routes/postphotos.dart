@@ -101,12 +101,11 @@ Future<Response> onRequest(RequestContext context) async {
       final cloudinaryApiSecret = Platform.environment['CLOUDINARY_API_SECRET'];
 
       print('🔍 Checking Cloudinary credentials...');
-      print(
-          '  Cloud Name: ${cloudinaryCloudName != null && cloudinaryCloudName.isNotEmpty ? "✅ Set" : "❌ Missing"}');
-      print(
-          '  API Key: ${cloudinaryApiKey != null && cloudinaryApiKey.isNotEmpty ? "✅ Set" : "❌ Missing"}');
-      print(
-          '  API Secret: ${cloudinaryApiSecret != null && cloudinaryApiSecret.isNotEmpty ? "✅ Set" : "❌ Missing"}');
+      print('  Cloud Name: ${cloudinaryCloudName != null && cloudinaryCloudName.isNotEmpty ? "✅ Set" : "❌ Missing"}');
+      print('  Cloud Name VALUE: "$cloudinaryCloudName" (length: ${cloudinaryCloudName?.length})');
+      print('  API Key: ${cloudinaryApiKey != null && cloudinaryApiKey.isNotEmpty ? "✅ Set" : "❌ Missing"}');
+      print('  API Key VALUE: "$cloudinaryApiKey"');
+      print('  API Secret: ${cloudinaryApiSecret != null && cloudinaryApiSecret.isNotEmpty ? "✅ Set" : "❌ Missing"}');
 
       if (cloudinaryCloudName == null ||
           cloudinaryCloudName.isEmpty ||
