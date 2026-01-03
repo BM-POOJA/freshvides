@@ -1,6 +1,6 @@
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
-import 'package:mysql_client/mysql_client.dart';
+import 'package:postgres/postgres.dart';
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.get) {
@@ -21,56 +21,60 @@ Future<Response> onRequest(RequestContext context) async {
     final conn = await DatabaseHelper.getConnection();
 
     try {
-      IResultSet result;
-      IResultSet countResult;
+      List<List<dynamic>> result;
+      List<List<dynamic>> countResult;
 
       if (userId != null) {
         // Get photos for specific user
         result = await conn.execute(
-          '''SELECT p.id, p.user_id, p.description, p.image, p.created_at, u.username, u.email 
-             FROM photos p 
-             JOIN signup u ON p.user_id = u.id 
-             WHERE p.user_id = :userId 
-             ORDER BY p.created_at DESC
-             LIMIT :limit OFFSET :offset''',
-          {'userId': int.parse(userId), 'limit': limit, 'offset': offset},
+          Sql.named(
+              '''SELECT p.id, p.user_id, p.description, p.image, p.created_at, u.username, u.email 
+               FROM photos p 
+               JOIN signup u ON p.user_id = u.id 
+               WHERE p.user_id = @userId 
+               ORDER BY p.created_at DESC
+               LIMIT @limit OFFSET @offset'''),
+          parameters: {
+            'userId': int.parse(userId),
+            'limit': limit,
+            'offset': offset
+          },
         );
 
         countResult = await conn.execute(
-          'SELECT COUNT(*) as total FROM photos WHERE user_id = :userId',
-          {'userId': int.parse(userId)},
+          Sql.named(
+              'SELECT COUNT(*) as total FROM photos WHERE user_id = @userId'),
+          parameters: {'userId': int.parse(userId)},
         );
       } else {
         // Get all photos
         result = await conn.execute(
-          '''SELECT p.id, p.user_id, p.description, p.image, p.created_at, u.username, u.email 
-             FROM photos p 
-             JOIN signup u ON p.user_id = u.id 
-             ORDER BY p.created_at DESC
-             LIMIT :limit OFFSET :offset''',
-          {'limit': limit, 'offset': offset},
+          Sql.named(
+              '''SELECT p.id, p.user_id, p.description, p.image, p.created_at, u.username, u.email 
+               FROM photos p 
+               JOIN signup u ON p.user_id = u.id 
+               ORDER BY p.created_at DESC
+               LIMIT @limit OFFSET @offset'''),
+          parameters: {'limit': limit, 'offset': offset},
         );
 
         countResult = await conn.execute(
-          'SELECT COUNT(*) as total FROM photos',
+          Sql.named('SELECT COUNT(*) as total FROM photos'),
         );
       }
 
-      final totalCount =
-          int.parse(countResult.rows.first.assoc()['total'] ?? '0');
+      final totalCount = countResult[0][0] as int;
       final totalPages = (totalCount / limit).ceil();
 
-      final photos = result.rows.map((row) {
-        final data = row.assoc();
-        final imagePath = data['image'] ?? '';
+      final photos = result.map((row) {
         return {
-          'id': int.parse(data['id'] ?? '0'),
-          'user_id': int.parse(data['user_id'] ?? '0'),
-          'username': data['username'],
-          'email': data['email'],
-          'description': data['description'],
-          'image': '/uploads/photos/$imagePath',
-          'created_at': data['created_at'],
+          'id': row[0] as int,
+          'user_id': row[1] as int,
+          'description': row[2] as String?,
+          'image': row[3] as String?,
+          'created_at': row[4].toString(),
+          'username': row[5] as String?,
+          'email': row[6] as String?,
         };
       }).toList();
 

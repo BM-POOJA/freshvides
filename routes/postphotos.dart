@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
 import 'package:http/http.dart' as http;
+import 'package:postgres/postgres.dart';
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.post) {
@@ -46,11 +47,11 @@ Future<Response> onRequest(RequestContext context) async {
     try {
       // Verify user exists
       final userCheck = await conn.execute(
-        'SELECT id FROM signup WHERE id = :userId',
-        {'userId': userId},
+        Sql.named('SELECT id FROM signup WHERE id = @userId'),
+        parameters: {'userId': userId},
       );
 
-      if (userCheck.rows.isEmpty) {
+      if (userCheck.isEmpty) {
         await conn.close();
         return Response.json(
           statusCode: 404,
@@ -129,9 +130,10 @@ Future<Response> onRequest(RequestContext context) async {
 
       // Insert photo into database with Cloudinary URL
       final result = await conn.execute(
-        '''INSERT INTO photos (user_id, description, image, created_at) 
-           VALUES (:user_id, :description, :image, NOW())''',
-        {
+        Sql.named(
+            '''INSERT INTO photos (user_id, description, image, created_at) 
+           VALUES (@user_id, @description, @image, NOW()) RETURNING id'''),
+        parameters: {
           'user_id': userId,
           'description': description ?? '',
           'image': imageUrl, // Store full Cloudinary URL
@@ -145,7 +147,7 @@ Future<Response> onRequest(RequestContext context) async {
         body: {
           'message': 'Photo uploaded successfully.',
           'photo': {
-            'id': result.lastInsertID.toInt(),
+            'id': result[0][0] as int,
             'user_id': userId,
             'description': description,
             'image': imageUrl,

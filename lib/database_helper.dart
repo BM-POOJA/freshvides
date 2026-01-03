@@ -1,24 +1,27 @@
-import 'package:mysql_client/mysql_client.dart';
-import 'dart:typed_data';
+import 'package:postgres/postgres.dart';
 import 'dart:io';
 
 class DatabaseHelper {
-  static Future<MySQLConnection> getConnection() async {
+  static Future<Connection> getConnection() async {
     try {
       final host = Platform.environment['DB_HOST'] ?? 'localhost';
-      final port = int.parse(Platform.environment['DB_PORT'] ?? '3306');
-      final userName = Platform.environment['DB_USER'] ?? 'root';
-      final password = Platform.environment['DB_PASSWORD'] ?? 'pbudha@5';
+      final port = int.parse(Platform.environment['DB_PORT'] ?? '5432');
+      final userName = Platform.environment['DB_USER'] ?? 'postgres';
+      final password = Platform.environment['DB_PASSWORD'] ?? '';
       final databaseName = Platform.environment['DB_NAME'] ?? 'listofapis';
 
-      final conn = await MySQLConnection.createConnection(
-        host: host,
-        port: port,
-        userName: userName,
-        password: password,
-        databaseName: databaseName,
+      final conn = await Connection.open(
+        Endpoint(
+          host: host,
+          port: port,
+          database: databaseName,
+          username: userName,
+          password: password,
+        ),
+        settings: ConnectionSettings(
+          sslMode: SslMode.require,
+        ),
       );
-      await conn.connect();
       print('✅ DB Connected Successfully');
       return conn;
     } catch (e) {

@@ -46,11 +46,11 @@ Future<Response> onRequest(RequestContext context) async {
     try {
       // Check if username already exists
       final existingUsername = await conn.execute(
-        'SELECT id FROM signup WHERE username = :username',
-        {'username': username},
+        'SELECT id FROM signup WHERE username = \$1',
+        parameters: [username],
       );
 
-      if (existingUsername.rows.isNotEmpty) {
+      if (existingUsername.isNotEmpty) {
         await conn.close();
         return Response.json(
           statusCode: 409,
@@ -60,11 +60,11 @@ Future<Response> onRequest(RequestContext context) async {
 
       // Check if email already exists
       final existingEmail = await conn.execute(
-        'SELECT id FROM signup WHERE email = :email',
-        {'email': email},
+        'SELECT id FROM signup WHERE email = \$1',
+        parameters: [email],
       );
 
-      if (existingEmail.rows.isNotEmpty) {
+      if (existingEmail.isNotEmpty) {
         await conn.close();
         return Response.json(
           statusCode: 409,
@@ -74,22 +74,20 @@ Future<Response> onRequest(RequestContext context) async {
 
       // Insert new user into database
       final result = await conn.execute(
-        'INSERT INTO signup (username, email, password, created_at) VALUES (:username, :email, :password, NOW())',
-        {
-          'username': username,
-          'email': email,
-          'password': password,
-        },
+        'INSERT INTO signup (username, email, password, created_at) VALUES (\$1, \$2, \$3, NOW()) RETURNING id',
+        parameters: [username, email, password],
       );
 
       await conn.close();
+
+      final userId = result.isNotEmpty ? result.first[0] as int : 0;
 
       return Response.json(
         statusCode: 201,
         body: {
           'message': 'User registered successfully.',
           'user': {
-            'id': result.lastInsertID.toInt(),
+            'id': userId,
             'username': username,
             'email': email,
           },

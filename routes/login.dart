@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
+import 'package:postgres/postgres.dart';
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.post) {
@@ -38,11 +39,12 @@ Future<Response> onRequest(RequestContext context) async {
     try {
       // Find user by username or email
       final result = await conn.execute(
-        'SELECT id, username, email, password, created_at FROM signup WHERE username = :usernameOrEmail OR email = :usernameOrEmail',
-        {'usernameOrEmail': usernameOrEmail},
+        Sql.named(
+            'SELECT id, username, email, password, created_at FROM signup WHERE username = @usernameOrEmail OR email = @usernameOrEmail'),
+        parameters: {'usernameOrEmail': usernameOrEmail},
       );
 
-      if (result.rows.isEmpty) {
+      if (result.isEmpty) {
         await conn.close();
         return Response.json(
           statusCode: 401,
@@ -50,8 +52,8 @@ Future<Response> onRequest(RequestContext context) async {
         );
       }
 
-      final user = result.rows.first.assoc();
-      final storedPassword = user['password'];
+      final user = result.first;
+      final storedPassword = user[3] as String?;
 
       // Verify password
       if (storedPassword != password) {
@@ -69,10 +71,10 @@ Future<Response> onRequest(RequestContext context) async {
         body: {
           'message': 'Login successful.',
           'user': {
-            'id': int.parse(user['id'] ?? '0'),
-            'username': user['username'],
-            'email': user['email'],
-            'created_at': user['created_at'],
+            'id': user[0] as int,
+            'username': user[1] as String?,
+            'email': user[2] as String?,
+            'created_at': user[4].toString(),
           },
         },
       );

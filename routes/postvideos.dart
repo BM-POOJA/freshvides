@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
+import 'package:postgres/postgres.dart';
 // ignore: directives_ordering
 import 'package:http/http.dart' as http;
 
@@ -103,11 +104,11 @@ Future<Response> _postVideo(RequestContext context) async {
       try {
         // Verify user exists
         final userCheck = await conn.execute(
-          'SELECT id FROM signup WHERE id = :userId',
-          {'userId': userId},
+          Sql.named('SELECT id FROM signup WHERE id = @userId'),
+          parameters: {'userId': userId},
         );
 
-        if (userCheck.rows.isEmpty) {
+        if (userCheck.isEmpty) {
           await conn.close();
           _usersCurrentlyUploading.remove(userId);
           return Response.json(
@@ -173,9 +174,10 @@ Future<Response> _postVideo(RequestContext context) async {
 
         // Insert video into database with Cloudinary URL
         final result = await conn.execute(
-          '''INSERT INTO videos (user_id, title, description, video_url, video_type, duration, created_at) 
-             VALUES (:user_id, :title, :description, :video_url, :video_type, :duration, NOW())''',
-          {
+          Sql.named(
+              '''INSERT INTO videos (user_id, title, description, video_url, video_type, duration, created_at) 
+             VALUES (@user_id, @title, @description, @video_url, @video_type, @duration, NOW()) RETURNING id'''),
+          parameters: {
             'user_id': userId,
             'title': title,
             'description': description ?? '',
@@ -195,7 +197,7 @@ Future<Response> _postVideo(RequestContext context) async {
           body: {
             'message': 'Video posted successfully.',
             'video': {
-              'id': result.lastInsertID.toInt(),
+              'id': result[0][0] as int,
               'user_id': userId,
               'title': title,
               'description': description,
