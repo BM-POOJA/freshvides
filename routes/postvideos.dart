@@ -186,11 +186,11 @@ Future<Response> _postVideo(RequestContext context) async {
 
         print('🔐 Generating signature...');
         // Generate signature for secure upload
+        // Note: resource_type is sent as form field but NOT included in signature
         final signature = _generateCloudinarySignature(
           publicId: request.fields['public_id']!,
           timestamp: request.fields['timestamp']!,
           apiSecret: cloudinaryApiSecret,
-          resourceType: 'video',
         );
         request.fields['signature'] = signature;
         print('✅ Signature generated: ${signature.substring(0, 10)}...');
