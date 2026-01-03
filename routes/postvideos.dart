@@ -315,9 +315,9 @@ String _generateCloudinarySignature({
   // Append API secret
   final stringToSign = '$paramsString$apiSecret';
 
-  // Generate SHA256 hash
+  // Generate SHA-1 hash (Cloudinary uses SHA-1, not SHA-256)
   final bytes = utf8.encode(stringToSign);
-  final digest = sha256.convert(bytes);
+  final digest = sha1.convert(bytes);
 
   return digest.toString();
 }
