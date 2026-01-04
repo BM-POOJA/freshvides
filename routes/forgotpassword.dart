@@ -106,28 +106,43 @@ Future<Response> onRequest(RequestContext context) async {
         final smtpPort =
             int.tryParse(Platform.environment['SMTP_PORT'] ?? '587') ?? 587;
 
+        // Debug: Print environment variables (mask password)
+        print('🔍 Checking SMTP Configuration:');
+        print(
+            '  SMTP_HOST: ${smtpHost} (${Platform.environment['SMTP_HOST'] != null ? "from env" : "default"})');
+        print(
+            '  SMTP_PORT: $smtpPort (${Platform.environment['SMTP_PORT'] != null ? "from env" : "default"})');
+        print(
+            '  SMTP_USERNAME: ${smtpUsername != null && smtpUsername.isNotEmpty ? smtpUsername : "❌ NOT SET"}');
+        print(
+            '  SMTP_PASSWORD: ${smtpPassword != null && smtpPassword.isNotEmpty ? "✅ SET (${smtpPassword.length} chars)" : "❌ NOT SET"}');
+
         if (smtpUsername == null ||
             smtpUsername.isEmpty ||
             smtpPassword == null ||
             smtpPassword.isEmpty) {
           print('⚠️ SMTP credentials not configured. Reset code: $resetCode');
+          print(
+              '💡 Add SMTP_USERNAME and SMTP_PASSWORD to environment variables');
           // If email not configured, return code in response for testing
           return Response.json(
             statusCode: 200,
             body: {
               'message':
-                  'Email service not configured. Your reset code is included in response.',
+                  'Email service temporarily unavailable. Please contact support.',
               'reset_code': resetCode,
             },
           );
         }
 
+        print('✅ SMTP credentials found, initializing mail server...');
         final smtpServer = SmtpServer(
           smtpHost,
           port: smtpPort,
           username: smtpUsername,
           password: smtpPassword,
         );
+        print('📧 SMTP Server configured: $smtpHost:$smtpPort');
 
         final message = Message()
           ..from = Address(smtpUsername, 'FreshVibes')
@@ -185,6 +200,11 @@ FreshVibes Team
 </html>
 ''';
 
+        print('📤 Attempting to send email...');
+        print('  From: $smtpUsername');
+        print('  To: $email');
+        print('  Subject: Password Reset Code - FreshVibes');
+
         await send(message, smtpServer);
         print('✅ Password reset email sent successfully to $email');
 
@@ -195,8 +215,9 @@ FreshVibes Team
                 'Password reset code has been sent to your email. Code expires in 15 minutes.',
           },
         );
-      } catch (e) {
+      } catch (e, stackTrace) {
         print('❌ Email sending error: $e');
+        print('❌ Stack trace: $stackTrace');
         // If email fails, still return success but log the code
         print('🔐 Fallback - Reset code for $email: $resetCode');
         return Response.json(
