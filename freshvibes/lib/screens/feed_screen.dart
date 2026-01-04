@@ -16,6 +16,7 @@ class FeedScreen extends StatefulWidget {
 
 class _FeedScreenState extends State<FeedScreen> {
   final PageController _pageController = PageController();
+  int _currentPage = 0;
   bool _isLoading = true;
   List<Map<String, dynamic>> _feedItems = [];
   final Map<int, VideoPlayerController> _videoControllers = {};
@@ -32,45 +33,17 @@ class _FeedScreenState extends State<FeedScreen> {
     setState(() => _isLoading = true);
     try {
       debugPrint('🔄 Loading feed...');
-      debugPrint('📸 Photos endpoint: ${ApiConstants.getAllPhotosEndpoint}');
       debugPrint('🎥 Videos endpoint: ${ApiConstants.getAllVideosEndpoint}');
 
-      // Fetch photos and videos in parallel
-      final results = await Future.wait([
-        http.get(Uri.parse(ApiConstants.getAllPhotosEndpoint)),
-        http.get(Uri.parse(ApiConstants.getAllVideosEndpoint)),
-      ]);
+      // Fetch only videos
+      final videosResponse = await http.get(
+        Uri.parse(ApiConstants.getAllVideosEndpoint),
+      );
 
-      final photosResponse = results[0];
-      final videosResponse = results[1];
-
-      debugPrint('📸 Photos Response Status: ${photosResponse.statusCode}');
-      debugPrint('📸 Photos Response Body: ${photosResponse.body}');
       debugPrint('🎥 Videos Response Status: ${videosResponse.statusCode}');
       debugPrint('🎥 Videos Response Body: ${videosResponse.body}');
 
       List<Map<String, dynamic>> allItems = [];
-
-      // Parse photos
-      if (photosResponse.statusCode == 200) {
-        final photosData = jsonDecode(photosResponse.body);
-        debugPrint('📸 Photos Data: $photosData');
-        debugPrint('📸 Photos Key Exists: ${photosData.containsKey('photos')}');
-
-        if (photosData['photos'] != null) {
-          debugPrint('📸 Number of photos: ${photosData['photos'].length}');
-          for (var photo in photosData['photos']) {
-            debugPrint('📸 Adding photo: $photo');
-            allItems.add({...photo, 'type': 'photo'});
-          }
-        } else {
-          debugPrint('⚠️ Photos data is null');
-        }
-      } else {
-        debugPrint(
-          '❌ Photos request failed with status: ${photosResponse.statusCode}',
-        );
-      }
 
       // Parse videos
       if (videosResponse.statusCode == 200) {
@@ -205,6 +178,7 @@ class _FeedScreenState extends State<FeedScreen> {
           : PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
+              onPageChanged: _onPageChanged,
               itemCount: _feedItems.length,
               itemBuilder: (context, index) {
                 final item = _feedItems[index];
@@ -212,6 +186,27 @@ class _FeedScreenState extends State<FeedScreen> {
               },
             ),
     );
+  }
+
+  void _onPageChanged(int index) {
+    // Pause all other videos
+    _videoControllers.forEach((key, controller) {
+      if (controller.value.isInitialized && controller.value.isPlaying) {
+        controller.pause();
+      }
+    });
+
+    // Play the current video
+    final currentItem = _feedItems[index];
+    final itemId = currentItem['id'] ?? 0;
+    final controller = _videoControllers[itemId];
+    if (controller != null && controller.value.isInitialized) {
+      controller.play();
+    }
+
+    setState(() {
+      _currentPage = index;
+    });
   }
 
   Widget _buildFeedItem(Map<String, dynamic> item) {
@@ -352,6 +347,7 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget _buildVideoPlayer(Map<String, dynamic> item) {
     final videoUrl = item['video_url'] ?? '';
     final itemId = item['id'] ?? 0;
+    final itemIndex = _feedItems.indexWhere((i) => i['id'] == itemId);
 
     if (!_videoControllers.containsKey(itemId) && videoUrl.isNotEmpty) {
       debugPrint('🎬 Initializing video player for: $videoUrl');
@@ -362,7 +358,10 @@ class _FeedScreenState extends State<FeedScreen> {
             debugPrint('✅ Video initialized successfully');
             if (mounted) setState(() {});
             controller.setLooping(true);
-            controller.play();
+            // Only auto-play the first video
+            if (itemIndex == 0) {
+              controller.play();
+            }
           })
           .catchError((error) {
             debugPrint('❌ Video initialization error: $error');

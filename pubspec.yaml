@@ -12,6 +12,7 @@ dependencies:
   path: ^1.8.3
   http:
   crypto: ^3.0.3
+  mailer: ^6.1.0
 
 dev_dependencies:
   dart_frog_lint: ^0.1.0

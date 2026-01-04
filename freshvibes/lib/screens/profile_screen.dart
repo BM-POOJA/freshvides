@@ -7,6 +7,8 @@ import 'dart:convert';
 import '../config/api_constants.dart';
 import 'post_detail_screen.dart';
 import 'signup_screen.dart';
+import 'upload_screen.dart';
+import 'upload_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -101,44 +103,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (!mounted) return;
 
-      // Show description dialog
-      final description = await _showDescriptionDialog();
-      if (description == null || description.isEmpty) return;
-
-      setState(() => _isUploading = true);
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse(ApiConstants.postPhotosEndpoint),
+      // Navigate to upload screen
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => UploadScreen(
+            mediaFile: File(image.path),
+            isVideo: false,
+            user: widget.user,
+          ),
+        ),
       );
 
-      request.fields['user_id'] = widget.user['id'].toString();
-      request.fields['description'] = description;
-
-      request.files.add(await http.MultipartFile.fromPath('photo', image.path));
-
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      // Reload posts if upload was successful
+      if (result == true) {
         _showSnackBar('Photo uploaded successfully!', isError: false);
-        _loadUserPosts(); // Reload posts after upload
-      } else {
-        final errorData = jsonDecode(responseBody);
-        _showSnackBar(
-          errorData['error'] ?? 'Upload failed. Please try again.',
-          isError: true,
-        );
+        _loadUserPosts();
       }
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar('Error uploading photo: ${e.toString()}', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
+      _showSnackBar('Error selecting photo: ${e.toString()}', isError: true);
     }
   }
 
@@ -150,44 +134,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (!mounted) return;
 
-      // Show description dialog
-      final description = await _showDescriptionDialog();
-      if (description == null || description.isEmpty) return;
-
-      setState(() => _isUploading = true);
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse(ApiConstants.postVideosEndpoint),
+      // Navigate to upload screen
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => UploadScreen(
+            mediaFile: File(video.path),
+            isVideo: true,
+            user: widget.user,
+          ),
+        ),
       );
 
-      request.fields['user_id'] = widget.user['id'].toString();
-      request.fields['description'] = description;
-
-      request.files.add(await http.MultipartFile.fromPath('video', video.path));
-
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _loadUserPosts(); // Reload posts after upload
+      // Reload posts if upload was successful
+      if (result == true) {
         _showSnackBar('Video uploaded successfully!', isError: false);
-      } else {
-        final errorData = jsonDecode(responseBody);
-        _showSnackBar(
-          errorData['error'] ?? 'Upload failed. Please try again.',
-          isError: true,
-        );
+        _loadUserPosts();
       }
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar('Error uploading video: ${e.toString()}', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
-      }
+      _showSnackBar('Error selecting video: ${e.toString()}', isError: true);
     }
   }
 
