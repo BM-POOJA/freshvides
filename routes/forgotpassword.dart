@@ -4,8 +4,7 @@ import 'package:dart_frog/dart_frog.dart';
 import 'package:listofapis/database_helper.dart';
 import 'package:postgres/postgres.dart';
 import 'package:crypto/crypto.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
 
 Future<Response> onRequest(RequestContext context) async {
   if (context.request.method != HttpMethod.post) {
@@ -100,30 +99,18 @@ Future<Response> onRequest(RequestContext context) async {
       print('📧 Sending password reset code to $email...');
 
       try {
-        final smtpUsername = Platform.environment['SMTP_USERNAME'];
-        final smtpPassword = Platform.environment['SMTP_PASSWORD'];
-        final smtpHost = Platform.environment['SMTP_HOST'] ?? 'smtp.gmail.com';
-        final smtpPort =
-            int.tryParse(Platform.environment['SMTP_PORT'] ?? '587') ?? 587;
+        final sendgridApiKey = Platform.environment['SENDGRID_API_KEY'];
+        final fromEmail =
+            Platform.environment['FROM_EMAIL'] ?? 'noreply@freshvibes.com';
 
-        // Debug: Print environment variables (mask password)
-        print('🔍 Checking SMTP Configuration:');
+        print('🔍 Checking SendGrid Configuration:');
         print(
-            '  SMTP_HOST: ${smtpHost} (${Platform.environment['SMTP_HOST'] != null ? "from env" : "default"})');
-        print(
-            '  SMTP_PORT: $smtpPort (${Platform.environment['SMTP_PORT'] != null ? "from env" : "default"})');
-        print(
-            '  SMTP_USERNAME: ${smtpUsername != null && smtpUsername.isNotEmpty ? smtpUsername : "❌ NOT SET"}');
-        print(
-            '  SMTP_PASSWORD: ${smtpPassword != null && smtpPassword.isNotEmpty ? "✅ SET (${smtpPassword.length} chars)" : "❌ NOT SET"}');
+            '  SENDGRID_API_KEY: ${sendgridApiKey != null && sendgridApiKey.isNotEmpty ? "✅ SET (${sendgridApiKey.length} chars)" : "❌ NOT SET"}');
+        print('  FROM_EMAIL: $fromEmail');
 
-        if (smtpUsername == null ||
-            smtpUsername.isEmpty ||
-            smtpPassword == null ||
-            smtpPassword.isEmpty) {
-          print('⚠️ SMTP credentials not configured. Reset code: $resetCode');
-          print(
-              '💡 Add SMTP_USERNAME and SMTP_PASSWORD to environment variables');
+        if (sendgridApiKey == null || sendgridApiKey.isEmpty) {
+          print('⚠️ SendGrid API key not configured. Reset code: $resetCode');
+          print('💡 Add SENDGRID_API_KEY to environment variables');
           // If email not configured, return code in response for testing
           return Response.json(
             statusCode: 200,
@@ -135,20 +122,22 @@ Future<Response> onRequest(RequestContext context) async {
           );
         }
 
-        print('✅ SMTP credentials found, initializing mail server...');
-        final smtpServer = SmtpServer(
-          smtpHost,
-          port: smtpPort,
-          username: smtpUsername,
-          password: smtpPassword,
-        );
-        print('📧 SMTP Server configured: $smtpHost:$smtpPort');
+        print('✅ SendGrid API key found, preparing email...');
 
-        final message = Message()
-          ..from = Address(smtpUsername, 'FreshVibes')
-          ..recipients.add(email)
-          ..subject = 'Password Reset Code - FreshVibes'
-          ..text = '''
+        final emailBody = {
+          'personalizations': [
+            {
+              'to': [
+                {'email': email}
+              ],
+              'subject': 'Password Reset Code - FreshVibes'
+            }
+          ],
+          'from': {'email': fromEmail, 'name': 'FreshVibes'},
+          'content': [
+            {
+              'type': 'text/plain',
+              'value': '''
 Hello $username,
 
 You requested to reset your password for FreshVibes.
@@ -162,7 +151,10 @@ If you didn't request this, please ignore this email.
 Best regards,
 FreshVibes Team
 '''
-          ..html = '''
+            },
+            {
+              'type': 'text/html',
+              'value': '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -198,23 +190,39 @@ FreshVibes Team
   </div>
 </body>
 </html>
-''';
+'''
+            }
+          ]
+        };
 
-        print('📤 Attempting to send email...');
-        print('  From: $smtpUsername');
+        print('📤 Attempting to send email via SendGrid API...');
+        print('  From: $fromEmail');
         print('  To: $email');
         print('  Subject: Password Reset Code - FreshVibes');
 
-        await send(message, smtpServer);
-        print('✅ Password reset email sent successfully to $email');
-
-        return Response.json(
-          statusCode: 200,
-          body: {
-            'message':
-                'Password reset code has been sent to your email. Code expires in 15 minutes.',
+        final response = await http.post(
+          Uri.parse('https://api.sendgrid.com/v3/mail/send'),
+          headers: {
+            'Authorization': 'Bearer $sendgridApiKey',
+            'Content-Type': 'application/json',
           },
+          body: jsonEncode(emailBody),
         );
+
+        print('📧 SendGrid API Response: ${response.statusCode}');
+        if (response.statusCode == 202) {
+          print('✅ Password reset email sent successfully to $email');
+          return Response.json(
+            statusCode: 200,
+            body: {
+              'message':
+                  'Password reset code has been sent to your email. Code expires in 15 minutes.',
+            },
+          );
+        } else {
+          print('❌ SendGrid API error: ${response.body}');
+          throw Exception('SendGrid API error: ${response.statusCode}');
+        }
       } catch (e, stackTrace) {
         print('❌ Email sending error: $e');
         print('❌ Stack trace: $stackTrace');
