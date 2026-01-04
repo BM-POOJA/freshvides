@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../config/api_constants.dart';
+import 'post_detail_screen.dart';
+import 'signup_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -17,6 +20,75 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
+  bool _isLoadingPosts = true;
+  List<Map<String, dynamic>> _posts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserPosts();
+  }
+
+  Future<void> _loadUserPosts() async {
+    setState(() => _isLoadingPosts = true);
+    try {
+      final userId = widget.user['id'].toString();
+
+      // Fetch photos and videos in parallel
+      final results = await Future.wait([
+        http.get(
+          Uri.parse('${ApiConstants.getPhotosEndpoint}?user_id=$userId'),
+        ),
+        http.get(
+          Uri.parse('${ApiConstants.getVideosEndpoint}?user_id=$userId'),
+        ),
+      ]);
+
+      final photosResponse = results[0];
+      final videosResponse = results[1];
+
+      List<Map<String, dynamic>> allPosts = [];
+
+      // Parse photos
+      if (photosResponse.statusCode == 200) {
+        final photosData = jsonDecode(photosResponse.body);
+        if (photosData['photos'] != null) {
+          for (var photo in photosData['photos']) {
+            allPosts.add({...photo, 'type': 'photo'});
+          }
+        }
+      }
+
+      // Parse videos
+      if (videosResponse.statusCode == 200) {
+        final videosData = jsonDecode(videosResponse.body);
+        if (videosData['videos'] != null) {
+          for (var video in videosData['videos']) {
+            allPosts.add({...video, 'type': 'video'});
+          }
+        }
+      }
+
+      // Sort by created_at (newest first)
+      allPosts.sort((a, b) {
+        final aTime = a['created_at'] ?? '';
+        final bTime = b['created_at'] ?? '';
+        return bTime.compareTo(aTime);
+      });
+
+      if (mounted) {
+        setState(() {
+          _posts = allPosts;
+          _isLoadingPosts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingPosts = false);
+        _showSnackBar('Error loading posts: ${e.toString()}', isError: true);
+      }
+    }
+  }
 
   Future<void> _uploadPhoto() async {
     try {
@@ -52,6 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         _showSnackBar('Photo uploaded successfully!', isError: false);
+        _loadUserPosts(); // Reload posts after upload
       } else {
         final errorData = jsonDecode(responseBody);
         _showSnackBar(
@@ -99,6 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        _loadUserPosts(); // Reload posts after upload
         _showSnackBar('Video uploaded successfully!', isError: false);
       } else {
         final errorData = jsonDecode(responseBody);
@@ -121,41 +195,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      barrierDismissible: false,
+      builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Add Description',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: 'What\'s on your mind?',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF111827), width: 2),
-            ),
-          ),
-          maxLines: 3,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF111827),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add Description',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
               ),
-            ),
-            child: const Text('Upload', style: TextStyle(color: Colors.white)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: 'What\'s on your mind?',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF111827),
+                      width: 2,
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+                maxLines: 3,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context, controller.text.trim());
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF111827),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                    ),
+                    child: const Text(
+                      'Upload',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -168,6 +278,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+    );
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Logout',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF111827),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_data');
+
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const SignupScreen()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _showPostDetail(Map<String, dynamic> post) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
   }
 
@@ -187,8 +347,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Color(0xFF111827)),
-            onPressed: () {},
+            icon: const Icon(Icons.logout, color: Color(0xFF111827)),
+            onPressed: _logout,
           ),
         ],
       ),
@@ -229,79 +389,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     widget.user['email'] ?? '',
                     style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildStatItem('Posts', '0'),
-                      Container(width: 1, height: 40, color: Colors.grey[300]),
-                      _buildStatItem('Followers', '0'),
-                      Container(width: 1, height: 40, color: Colors.grey[300]),
-                      _buildStatItem('Following', '0'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Upload Section
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Upload Content',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
+                  const SizedBox(height: 16),
+                  _buildStatItem('Posts', _posts.length.toString()),
                   const SizedBox(height: 16),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(
-                        child: _buildUploadButton(
-                          icon: Icons.image_outlined,
-                          label: 'Upload Photo',
-                          onTap: _isUploading ? null : _uploadPhoto,
-                        ),
+                      _buildCompactUploadButton(
+                        icon: Icons.add_photo_alternate,
+                        label: 'Photo',
+                        onTap: _isUploading ? null : _uploadPhoto,
                       ),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildUploadButton(
-                          icon: Icons.video_library_outlined,
-                          label: 'Upload Video',
-                          onTap: _isUploading ? null : _uploadVideo,
-                        ),
+                      _buildCompactUploadButton(
+                        icon: Icons.video_call,
+                        label: 'Video',
+                        onTap: _isUploading ? null : _uploadVideo,
                       ),
                     ],
                   ),
                   if (_isUploading) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     const LinearProgressIndicator(
                       valueColor: AlwaysStoppedAnimation<Color>(
                         Color(0xFF111827),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     const Text(
                       'Uploading...',
+                      textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
@@ -309,7 +426,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // Posts Grid (placeholder)
             Padding(
@@ -326,43 +443,146 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.photo_library_outlined,
-                            size: 48,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No posts yet',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
+                  _isLoadingPosts
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32.0),
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF111827),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Upload your first photo or video',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[500],
-                            ),
+                        )
+                      : _posts.isEmpty
+                      ? Container(
+                          padding: const EdgeInsets.all(48),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[300]!),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.photo_library_outlined,
+                                size: 64,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No posts yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Upload your first photo or video',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 4,
+                                mainAxisSpacing: 4,
+                              ),
+                          itemCount: _posts.length,
+                          itemBuilder: (context, index) {
+                            final post = _posts[index];
+                            final isVideo = post['type'] == 'video';
+                            final imageUrl = isVideo
+                                ? null
+                                : post['image'] ?? post['public_id'];
+                            final videoUrl = isVideo
+                                ? post['video_url'] ?? post['public_id']
+                                : null;
+
+                            return GestureDetector(
+                              onTap: () => _showPostDetail(post),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (!isVideo && imageUrl != null)
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          imageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.image_outlined,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Center(
+                                        child: Icon(
+                                          isVideo
+                                              ? Icons.play_circle_outline
+                                              : Icons.image_outlined,
+                                          color: Colors.grey[600],
+                                          size: 40,
+                                        ),
+                                      ),
+                                    if (isVideo)
+                                      Positioned(
+                                        bottom: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withOpacity(
+                                              0.7,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.videocam,
+                                                color: Colors.white,
+                                                size: 12,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '${post['duration'] ?? 0}s',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                 ],
               ),
             ),
@@ -391,38 +611,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildUploadButton({
+  Widget _buildCompactUploadButton({
     required IconData icon,
     required String label,
     required VoidCallback? onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: onTap == null ? Colors.grey[200] : const Color(0xFF111827),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              color: onTap == null ? Colors.grey[400] : Colors.white,
-              size: 32,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: onTap == null ? Colors.grey[400] : Colors.white,
-              ),
-            ),
-          ],
-        ),
+    final isDisabled = onTap == null;
+    return ElevatedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isDisabled
+            ? Colors.grey[300]
+            : const Color(0xFF111827),
+        foregroundColor: isDisabled ? Colors.grey[600] : Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        elevation: isDisabled ? 0 : 2,
       ),
     );
   }

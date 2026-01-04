@@ -8,4 +8,8 @@ class ApiConstants {
   static const String postPhotosEndpoint = '$baseUrl/postphotos';
   static const String postVideosEndpoint = '$baseUrl/postvideos';
   static const String getFeedEndpoint = '$baseUrl/feed';
+  static const String getPhotosEndpoint = '$baseUrl/getphotos';
+  static const String getVideosEndpoint = '$baseUrl/getvideos';
+  static const String getAllPhotosEndpoint = '$baseUrl/getphotos';
+  static const String getAllVideosEndpoint = '$baseUrl/getvideos';
 }

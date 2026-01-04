@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:freshvibes/screens/home_screen.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../config/api_constants.dart';
 
@@ -85,6 +86,9 @@ class _LoginScreenState extends State<LoginScreen>
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        // Save user data to SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_data', jsonEncode(data['user']));
         _showSuccessDialog(data['user']);
       } else {
         final errorData = jsonDecode(response.body);
@@ -591,6 +595,8 @@ class _LoginScreenState extends State<LoginScreen>
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
+          textInputAction: TextInputAction.next,
+          enableInteractiveSelection: true,
           style: const TextStyle(
             fontSize: 15,
             color: Color(0xFF111827),

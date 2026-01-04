@@ -695,6 +695,8 @@ class _SignupScreenState extends State<SignupScreen>
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
+          textInputAction: TextInputAction.next,
+          enableInteractiveSelection: true,
           style: const TextStyle(
             fontSize: 15,
             color: Color(0xFF111827),

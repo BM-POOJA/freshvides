@@ -67,14 +67,12 @@ Future<Response> onRequest(RequestContext context) async {
       final totalPages = (totalCount / limit).ceil();
 
       final videos = result.map((row) {
-        final videoPath = (row[4] as String?) ?? '';
-        final videoFile = videoPath.split('/').last;
         return {
           'id': row[0] as int,
           'user_id': row[1] as int,
           'title': row[2] as String?,
           'description': row[3] as String?,
-          'video_url': '/uploads/videos/$videoFile',
+          'video_url': row[4] as String?,
           'video_type': row[5] as String?,
           'duration': row[6] as int?,
           'created_at': row[7].toString(),
